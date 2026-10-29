@@ -165,35 +165,39 @@ window.PLAYER_CHAPTERS = {
     "src": "videos/p04.mp4"
   },
   "p05": {
-    "duration": 70,
+    "duration": 84.5,
     "chapters": [
       {
         "label": "片頭",
         "start": 0
       },
       {
+        "label": "短影音",
+        "start": 3
+      },
+      {
         "label": "身分",
-        "start": 4
+        "start": 33
       },
       {
         "label": "卡關",
-        "start": 12.4
+        "start": 39
       },
       {
         "label": "做法",
-        "start": 22
+        "start": 47
       },
       {
         "label": "提問",
-        "start": 37
+        "start": 59
       },
       {
         "label": "成果",
-        "start": 44.5
+        "start": 66
       },
       {
         "label": "收尾",
-        "start": 61.5
+        "start": 76
       }
     ],
     "src": "videos/p05.mp4"
