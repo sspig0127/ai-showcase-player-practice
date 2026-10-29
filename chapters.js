@@ -377,7 +377,7 @@ window.PLAYER_CHAPTERS = {
     "src": "videos/p10.mp4"
   },
   "p11": {
-    "duration": 78,
+    "duration": 89,
     "chapters": [
       {
         "label": "片頭",
@@ -393,23 +393,27 @@ window.PLAYER_CHAPTERS = {
       },
       {
         "label": "提問",
-        "start": 31
+        "start": 29
       },
       {
         "label": "成果",
-        "start": 37
+        "start": 35
+      },
+      {
+        "label": "對照",
+        "start": 44
       },
       {
         "label": "實例",
-        "start": 47
+        "start": 60
       },
       {
         "label": "卡關",
-        "start": 58
+        "start": 71
       },
       {
         "label": "收尾",
-        "start": 72
+        "start": 83
       }
     ],
     "src": "videos/p11.mp4"

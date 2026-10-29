@@ -70,7 +70,7 @@ window.PLAYER_SETTINGS = {
       "name": "學員 11",
       "topic": "練習影片",
       "pause": false,
-      "slot": 60
+      "slot": 90
     }
   ],
   "rate": 1,
