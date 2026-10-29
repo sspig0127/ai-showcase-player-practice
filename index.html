@@ -1,0 +1,777 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>成果發表播放器</title>
+<!-- 離線播放頁：雙擊開啟即可（file://），不需伺服器、不需網路。
+     影片放在 videos/（由 scripts/build-player.py 產生），設定在 settings.js，章節在 chapters.js。 -->
+<style>
+  :root, :root[data-theme="theater"] {
+    --bg: #0b0b0c; --panel: #161618; --line: #2a2a2e; --text: #f2f2f0; --dim: #9a9a9f;
+    --accent: #e8873a; --accent-ink: #16120e; --chip: #1f1f23; --fill: rgba(232, 135, 58, 0.22);
+  }
+  :root[data-theme="ember"] {
+    --bg: #16120e; --panel: #211b15; --line: #3a2f25; --text: #f4efe7; --dim: #a39383;
+    --accent: #e8873a; --accent-ink: #16120e; --chip: #2a2219; --fill: rgba(232, 135, 58, 0.22);
+  }
+  :root[data-theme="harbor"] {
+    --bg: #0c1526; --panel: #122038; --line: #22355a; --text: #eef3fa; --dim: #8fa3bd;
+    --accent: #4fb3e6; --accent-ink: #0c1526; --chip: #172a48; --fill: rgba(79, 179, 230, 0.22);
+  }
+  :root[data-theme="bamboo"] {
+    --bg: #f3f1e7; --panel: #fbfaf4; --line: #d6d2bf; --text: #1d2a1f; --dim: #56655a;
+    --accent: #1f7a4a; --accent-ink: #ffffff; --chip: #e9e6d6; --fill: rgba(31, 122, 74, 0.16);
+  }
+  :root[data-theme="paper"] {
+    --bg: #f6f6f4; --panel: #ffffff; --line: #dcdcd8; --text: #1c1c1e; --dim: #5f5f64;
+    --accent: #b04a30; --accent-ink: #ffffff; --chip: #eeeeeb; --fill: rgba(176, 74, 48, 0.14);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", "Heiti TC", sans-serif;
+    font-size: 15px; line-height: 1.5;
+  }
+  button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulation; }
+  .app { display: grid; grid-template-columns: minmax(0, 1fr) 300px; grid-template-rows: auto 1fr; gap: 0 20px; height: 100%; padding: 14px 20px 16px; }
+  header { grid-column: 1 / -1; display: flex; align-items: center; gap: 14px; padding-bottom: 12px; }
+  header h1 { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: 0.02em; }
+  header .date { color: var(--dim); font-size: 14px; }
+  header .sp { flex: 1; }
+  .themes { display: flex; gap: 8px; align-items: center; }
+  .themes .lb { color: var(--dim); font-size: 13px; }
+  .themes .nm { color: var(--text); font-size: 13px; min-width: 4.5em; }
+  .sw { width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--line); padding: 0; position: relative; }
+  .sw[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); }
+  .sw i { position: absolute; inset: 6px; border-radius: 50%; }
+
+  main { min-width: 0; display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+  .now { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .now .no { color: var(--accent); font-weight: 800; font-size: 20px; font-variant-numeric: tabular-nums; }
+  .now .nm { font-size: 22px; font-weight: 800; }
+  .now .tp { color: var(--dim); }
+  /* 影片與章節列包在同一個 .player，寬度一致；高度受視窗限制時兩者一起縮 */
+  .player { width: min(100%, calc((100vh - 230px) * 16 / 9)); margin: 0 auto; display: flex; flex-direction: column; gap: 10px; }
+  .stage { position: relative; background: #000; border-radius: 10px; overflow: hidden; aspect-ratio: 16 / 9; width: 100%; }
+  .stage video { display: block; width: 100%; height: 100%; object-fit: contain; background: #000; }
+  .stage:fullscreen { border-radius: 0; aspect-ratio: auto; }
+  .stage:-webkit-full-screen { border-radius: 0; aspect-ratio: auto; width: 100%; height: 100%; }
+  /* 主講人計時浮水印：已經過時間（含暫停互動）、影片剩餘時間、配時 */
+  .stage { container-type: inline-size; }
+  .timer { position: absolute; right: 1.6cqw; top: 1.4cqw; display: none; align-items: stretch; gap: 1.2cqw; padding: 0.6cqw 1.1cqw; border-radius: 0.8cqw; background: rgba(0, 0, 0, 0.38); color: rgba(255, 255, 255, 0.82); pointer-events: none; z-index: 5; font-family: "SF Mono", Menlo, Consolas, "Roboto Mono", monospace; }
+  .timer.on { display: flex; }
+  .timer .cell { display: flex; flex-direction: column; align-items: flex-end; }
+  .timer .k { font-family: "PingFang TC", "Microsoft JhengHei", sans-serif; font-size: 0.95cqw; opacity: 0.8; letter-spacing: 0.08em; }
+  .timer .val { font-size: 2.3cqw; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .timer .sep { width: 1px; background: rgba(255, 255, 255, 0.25); }
+  .timer .val.warn { color: #ffb38a; }
+  .timer .val.over { color: #ff6b5e; }
+  .timer .val.idle { opacity: 0.5; }
+  .badge { position: absolute; left: 50%; top: 18px; transform: translateX(-50%); background: rgba(0, 0, 0, 0.75); color: #fff; padding: 8px 16px; border-radius: 999px; font-size: 15px; pointer-events: none; opacity: 0; transition: opacity 0.2s; white-space: nowrap; }
+  .badge.on { opacity: 1; }
+  .missing { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; text-align: center; color: #ddd; padding: 20px; }
+  .missing.on { display: flex; }
+  .missing code { background: #222; padding: 2px 6px; border-radius: 4px; }
+
+  /* 章節列：每段寬度依時間長度分配 */
+  .chap { position: relative; display: flex; height: 44px; border-radius: 8px; overflow: hidden; background: var(--panel); border: 1px solid var(--line); user-select: none; }
+  .chap button { position: relative; flex: none; border: 0; border-right: 1px solid var(--line); background: transparent; padding: 0 4px; font-size: 14px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; z-index: 1; }
+  .chap button:last-of-type { border-right: 0; }
+  .chap button:hover { color: var(--text); }
+  .chap button.cur { color: var(--accent); font-weight: 800; }
+  .chap .fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--fill); pointer-events: none; }
+  .chap .head { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--accent); pointer-events: none; z-index: 2; }
+  .chap .pmark { position: absolute; top: 0; width: 0; height: 0; margin-left: -7px; border: 7px solid transparent; border-top-color: var(--accent); z-index: 3; pointer-events: none; }
+  /* 段名前的編號：電腦版只顯示 1–9（對應快速鍵）；手機版段名放不下，只留編號，目前段名另外寫在章節列下方 */
+  .chap .k10 { display: none; }
+  .chap button.tight .cl { display: none; }
+  .chap button.tight .k10 { display: inline; }
+  .chn { display: none; color: var(--dim); font-size: 13px; margin-top: -4px; }
+  .chn b { color: var(--accent); }
+
+  .ctrl { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .btn { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 6px 12px; }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; min-width: 80px; }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn:disabled { opacity: 0.45; cursor: default; }
+  .speed { display: inline-flex; align-items: center; gap: 6px; }
+  .speed select { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; }
+  .speed .eta { color: var(--dim); font-size: 13px; font-variant-numeric: tabular-nums; }
+  .vol { display: inline-flex; align-items: center; gap: 6px; }
+  .vol .btn { padding: 6px 9px; min-width: 40px; }
+  .vol input { width: 110px; accent-color: var(--accent); cursor: pointer; }
+  .vol .pct { min-width: 44px; color: var(--dim); font-size: 13px; font-variant-numeric: tabular-nums; }
+  .time { font-variant-numeric: tabular-nums; color: var(--dim); min-width: 96px; text-align: center; }
+  .keys { color: var(--dim); font-size: 13px; }
+  .keys kbd { font-family: inherit; background: var(--chip); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; margin: 0 2px; color: var(--text); }
+
+  aside { min-height: 0; overflow: auto; border-left: 1px solid var(--line); padding-left: 16px; }
+  aside h2 { margin: 0 0 8px; font-size: 13px; color: var(--dim); font-weight: 500; letter-spacing: 0.1em; }
+  .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+  .list button { width: 100%; display: grid; grid-template-columns: 28px 1fr auto; align-items: center; gap: 8px; text-align: left; border: 1px solid transparent; background: transparent; border-radius: 8px; padding: 7px 8px; }
+  .list button:hover { background: var(--chip); }
+  .list button.cur { background: var(--chip); border-color: var(--accent); }
+  .list .n { color: var(--dim); font-variant-numeric: tabular-nums; text-align: right; }
+  .list button.cur .n { color: var(--accent); font-weight: 800; }
+  .list .who { font-weight: 700; }
+  .list .what { display: block; color: var(--dim); font-size: 13px; font-weight: 400; }
+  .list .d { color: var(--dim); font-size: 13px; font-variant-numeric: tabular-nums; text-align: right; }
+  .list .pz { display: block; color: var(--accent); font-size: 12px; font-weight: 400; }
+
+  /* 功能導覽：快速導覽（編號圓點＋對照卡）／逐步導覽（聚光燈＋說明卡） */
+  .tour-btns { display: flex; gap: 6px; }
+  .tour-btns .btn { padding: 4px 10px; font-size: 13px; }
+  /* 導覽層蓋住整份文件（不是只蓋視窗）：手機版頁面會捲動，框和編號要跟著元素走 */
+  .tour { position: absolute; left: 0; top: 0; width: 100%; height: 100%; z-index: 50; display: none; }
+  .tour.on { display: block; }
+  .tour .shade { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.62); }
+  .tour .mask { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .tour .mask path { fill: rgba(0, 0, 0, 0.62); fill-rule: evenodd; }
+  .tour .spot { position: absolute; border: 2px solid var(--accent); border-radius: 10px; pointer-events: none; }
+  .tour .ring { position: absolute; border: 2px dashed var(--accent); border-radius: 10px; pointer-events: none; }
+  .tour .pin { position: absolute; width: 30px; height: 30px; margin: -15px 0 0 -15px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); font-weight: 800; font-size: 16px; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5); }
+  .tour .card { position: absolute; width: min(380px, calc(100vw - 32px)); background: var(--panel); color: var(--text); border: 1px solid var(--accent); border-radius: 12px; padding: 16px 18px 14px; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5); transition: left 0.28s ease, top 0.28s ease; }
+  .tour .card h3 { margin: 0 0 6px; font-size: 18px; color: var(--accent); }
+  .tour .card p { margin: 0; }
+  .tour .card .kb { margin-top: 8px; color: var(--dim); font-size: 13px; }
+  .tour .card kbd { font-family: inherit; background: var(--chip); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; margin: 0 2px; color: var(--text); }
+  .tour .card .nav { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
+  .tour .card .nav .cnt { flex: 1; color: var(--dim); font-size: 13px; font-variant-numeric: tabular-nums; }
+  .tour .legend { width: min(560px, calc(100vw - 32px)); }
+  .tour .legend ol { margin: 4px 0 0; padding: 0; list-style: none; display: grid; grid-template-columns: 1fr 1fr; gap: 6px 18px; }
+  .tour .legend li { display: grid; grid-template-columns: 24px 1fr; gap: 6px; font-size: 14px; }
+  .tour .legend li b { color: var(--accent); font-variant-numeric: tabular-nums; }
+  .tour .legend li span em { display: block; font-style: normal; color: var(--dim); font-size: 13px; }
+  .tour .legend .hint { margin-top: 12px; color: var(--dim); font-size: 13px; }
+
+  @media (max-width: 900px) {
+    .tour .legend ol { grid-template-columns: 1fr; }
+    .app { grid-template-columns: 1fr; height: auto; padding: 12px 16px; }
+    .player { width: 100%; }
+    aside { border-left: 0; padding-left: 0; border-top: 1px solid var(--line); padding-top: 12px; margin-top: 14px; }
+    .chap button { font-size: 12px; }
+    .keys { display: none; }
+    header { flex-wrap: wrap; }
+  }
+
+  /* ---- 手機、平板（2026-10-29）---- */
+  /* 觸控裝置：沒有鍵盤，不列快速鍵；按鈕至少 44px 高，手指好點 */
+  .touch .keys { display: none; }
+  .touch .btn, .touch .speed select { min-height: 44px; }
+  .touch .list button { padding: 10px 8px; }
+  /* iPhone／iPad 不能用網頁調音量（只認機身音量鍵）：只留靜音鍵 */
+  .no-vol .vol input, .no-vol .vol .pct { display: none; }
+  @media (max-width: 600px) {
+    .app { padding: 10px 12px 24px; }
+    header { gap: 8px 12px; }
+    header h1 { font-size: 16px; width: 100%; }
+    .now .nm { font-size: 20px; }
+    .chap { height: 40px; }
+    .chap button { padding: 0; font-size: 13px; text-overflow: clip; }
+    .chap .cl { display: none; }
+    .chap .k10 { display: inline; }
+    .chn { display: block; }
+    /* 控制列排成 6 欄格線：上一段／播放／下一段 → 上一支／時間／下一支 → 倍速／音量／全螢幕 → 自動暫停／計時 */
+    .ctrl { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
+    .ctrl > * { grid-column: span 2; min-width: 0; }
+    .ctrl .btn { padding: 8px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .btn.primary { min-width: 0; }
+    #prevC { order: 1; } #play { order: 2; } #nextC { order: 3; }
+    #prevV { order: 4; } .time { order: 5; min-width: 0; } #nextV { order: 6; }
+    .speed { order: 7; } .vol { order: 8; } #fs { order: 9; }
+    #pz { order: 10; grid-column: span 4; } #tm { order: 11; }
+    .speed { justify-content: center; }
+    .speed select { flex: 1; min-width: 0; }
+    .speed .eta { display: none; }
+    .vol input { width: auto; flex: 1; min-width: 0; }
+    .vol .pct { display: none; }
+    .no-vol .vol .btn { flex: 1; }
+    .badge { white-space: normal; width: max-content; max-width: calc(100% - 24px); text-align: center; font-size: 13px; top: 10px; padding: 6px 12px; border-radius: 14px; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1 id="title">成果發表播放器</h1>
+    <span class="date" id="date"></span>
+    <span class="sp"></span>
+    <div class="tour-btns" id="tourBtns">
+      <button class="btn" id="tourQuick" title="一張圖看完所有功能（?）">快速導覽</button>
+      <button class="btn" id="tourStep" title="一步一步介紹每個功能（G）">逐步導覽</button>
+    </div>
+    <div class="themes" id="themes"><span class="lb">配色</span><span class="nm" id="themeName"></span></div>
+  </header>
+
+  <main>
+    <div class="now"><span class="no" id="no"></span><span class="nm" id="nm"></span><span class="tp" id="tp"></span></div>
+    <div class="player">
+      <div class="stage" id="stage">
+        <video id="v" preload="auto" playsinline></video>
+        <div class="timer" id="timer" aria-hidden="true">
+          <div class="cell"><span class="k">已經過</span><span class="val" id="tmEl">00:00</span></div>
+          <div class="sep"></div>
+          <div class="cell"><span class="k">影片剩餘</span><span class="val" id="tmRem">00:00</span></div>
+          <div class="sep"></div>
+          <div class="cell"><span class="k" id="tmSlotK">配時</span><span class="val" id="tmSlot">--:--</span></div>
+        </div>
+        <div class="badge" id="badge"></div>
+        <div class="missing" id="missing"><div>找不到這支影片。<br>請在專案目錄執行 <code>python3 scripts/build-player.py</code> 後重新整理。</div></div>
+      </div>
+      <div class="chap" id="chap"><div class="fill" id="fill"></div><div class="head" id="head"></div></div>
+      <div class="chn" id="chn"></div>
+    </div>
+    <div class="ctrl">
+      <button class="btn" id="prevV" title="上一支（PageUp）">⏮ 上一支</button>
+      <button class="btn" id="prevC" title="上一段（←）">◀ 上一段</button>
+      <button class="btn primary" id="play" title="播放／暫停（空白鍵）">▶ 播放</button>
+      <button class="btn" id="nextC" title="下一段（→）">下一段 ▶</button>
+      <button class="btn" id="nextV" title="下一支（PageDown）">下一支 ⏭</button>
+      <span class="time" id="time">0:00 / 0:00</span>
+      <label class="speed" title="播放倍速（&lt; &gt; 鍵）">倍速
+        <select id="rate"><option value="0.75">0.75×</option><option value="0.9">0.9×</option><option value="1" selected>1×</option><option value="1.1">1.1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option></select>
+        <span class="eta" id="eta"></span>
+      </label>
+      <span class="vol" title="音量（↑ ↓ 鍵調整、M 靜音）">
+        <button class="btn" id="mute" aria-pressed="false" title="靜音（M）">🔊</button>
+        <input type="range" id="vol" min="0" max="100" step="5" value="100" aria-label="音量">
+        <span class="pct" id="volPct">100%</span>
+      </span>
+      <button class="btn" id="pz" aria-pressed="false" title="這支影片播到提問段尾端時自動暫停（只影響這次開啟；要固定設定請改 settings.js）">自動暫停：關</button>
+      <button class="btn" id="tm" aria-pressed="false" title="影片右上角顯示半透明計時：已經過時間（含暫停互動）、影片剩餘時間、配時（C）">計時：關</button>
+      <button class="btn" id="fs" title="全螢幕（F）">⛶ 全螢幕</button>
+    </div>
+    <div class="keys">
+      <kbd>空白</kbd>播放／暫停 · <kbd>←</kbd><kbd>→</kbd>上／下一段 · <kbd>1</kbd>–<kbd>9</kbd>跳到第幾段 ·
+      <kbd>PgUp</kbd><kbd>PgDn</kbd>上／下一支 · <kbd>&lt;</kbd><kbd>&gt;</kbd>倍速 · <kbd>↑</kbd><kbd>↓</kbd>音量 · <kbd>M</kbd>靜音 · <kbd>C</kbd>計時 · <kbd>F</kbd>全螢幕 · <kbd>T</kbd>換配色 · <kbd>Home</kbd>從頭 · <kbd>?</kbd>快速導覽 · <kbd>G</kbd>逐步導覽
+    </div>
+  </main>
+
+  <aside>
+    <h2>出場順序</h2>
+    <ol class="list" id="list"></ol>
+  </aside>
+</div>
+<div class="tour" id="tour" role="dialog" aria-modal="true" aria-label="功能導覽"></div>
+
+<script src="settings.js"></script>
+<script src="chapters.js"></script>
+<script>
+(() => {
+  const S = window.PLAYER_SETTINGS || { videos: [] };
+  const C = window.PLAYER_CHAPTERS || {};
+  const THEMES = [
+    { key: "theater", name: "劇場黑", bg: "#0b0b0c", ac: "#e8873a" },
+    { key: "ember", name: "暖琥珀", bg: "#16120e", ac: "#e8873a" },
+    { key: "harbor", name: "港灣藍", bg: "#0c1526", ac: "#4fb3e6" },
+    { key: "bamboo", name: "竹林晨光", bg: "#f3f1e7", ac: "#1f7a4a" },
+    { key: "paper", name: "簡報白", bg: "#f6f6f4", ac: "#b04a30" },
+  ];
+  const $ = (id) => document.getElementById(id);
+  const v = $("v");
+  // 觸控裝置（手機、平板）：提示改寫成點按操作，不提鍵盤
+  const TOUCH = matchMedia("(hover: none) and (pointer: coarse)").matches;
+  // iOS 的 video.volume 唯讀（永遠讀回 1）：偵測到就隱藏音量拉桿
+  const VOL_OK = (() => { const t = document.createElement("video"); t.volume = 0.5; return t.volume === 0.5; })();
+  document.documentElement.classList.toggle("touch", TOUCH);
+  document.documentElement.classList.toggle("no-vol", !VOL_OK);
+  // 建元素的小工具：只用 textContent，不拼 HTML 字串
+  function el(tag, cls, text, kids) {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    (kids || []).forEach((k) => k && n.appendChild(k));
+    return n;
+  }
+  const store = {
+    get(k) { try { return localStorage.getItem("player." + k); } catch (e) { return null; } },
+    set(k, val) { try { localStorage.setItem("player." + k, val); } catch (e) {} },
+  };
+
+  // 影片清單：settings.js 的順序＋chapters.js 自動產生的章節
+  const list = (S.videos || []).filter((x) => C[x.slug]).map((x) => Object.assign({}, x, C[x.slug]));
+  const fmt = (t) => { t = Math.max(0, t || 0); const m = Math.floor(t / 60), s = Math.floor(t % 60); return m + ":" + String(s).padStart(2, "0"); };
+  const quizIndex = (it) => it.chapters.findIndex((c) => c.label === "提問");
+
+  // 暫停點：settings 的 pause（false／"quiz"／[秒數…]）；頁面上的開關只覆蓋這次開啟
+  const override = {};
+  function pausePoints(it) {
+    let p = it.pause;
+    if (it.slug in override) p = override[it.slug] ? (it.pause || "quiz") : false;
+    if (!p) return [];
+    if (Array.isArray(p)) return p.filter((t) => t > 0 && t < it.duration).sort((a, b) => a - b);
+    if (p === "quiz") {
+      const i = quizIndex(it);
+      if (i < 0) return [];
+      const end = i + 1 < it.chapters.length ? it.chapters[i + 1].start : it.duration;
+      return [Math.round((end - 1) * 10) / 10];
+    }
+    return [];
+  }
+  const canPause = (it) => Array.isArray(it.pause) || quizIndex(it) >= 0;
+
+  // 配色
+  function setTheme(key) {
+    const th = THEMES.find((t) => t.key === key) || THEMES[0];
+    document.documentElement.dataset.theme = th.key;
+    store.set("theme", th.key);
+    document.querySelectorAll(".sw").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.t === th.key)));
+    $("themeName").textContent = th.name;
+    return th;
+  }
+  THEMES.forEach((th) => {
+    const dot = el("i"); dot.style.background = th.ac;
+    const b = el("button", "sw", null, [dot]);
+    b.dataset.t = th.key; b.title = th.name; b.setAttribute("aria-label", "配色：" + th.name);
+    b.style.background = th.bg;
+    b.onclick = () => setTheme(th.key);
+    $("themes").insertBefore(b, $("themeName"));
+  });
+  setTheme(store.get("theme") || S.theme || "theater");
+
+  $("title").textContent = S.title || "成果發表播放器";
+  $("date").textContent = S.date || "";
+  document.title = (S.title || "成果發表") + "｜播放器";
+
+  let cur = 0, points = [], lastT = 0, chapBtns = [], marks = [];
+  // 計時：startedAt＝這支第一次按播放的時刻（牆上時間，暫停互動也照算）；Home 或從頭重播時歸零
+  let startedAt = null, timerOn = !!S.timer, rate = Number(S.rate) || 1;
+  // 音量：0–100（%），記在這台電腦；靜音另外記，取消靜音時回到原本的音量
+  let vol = store.get("volume") == null ? 100 : Math.max(0, Math.min(100, Number(store.get("volume")) || 0)), muted = store.get("muted") === "1";
+  const fmt2 = (t) => { const neg = t < 0; t = Math.abs(Math.round(t)); const m = Math.floor(t / 60), s2 = t % 60; return (neg ? "-" : "") + String(m).padStart(2, "0") + ":" + String(s2).padStart(2, "0"); };
+  const slotOf = (it) => Number(it.slot || S.slot) || 0;
+  const realRemain = () => Math.max(0, (list[cur].duration - (v.currentTime || 0)) / rate);
+
+  function renderList() {
+    const ol = $("list");
+    ol.replaceChildren();
+    list.forEach((it, i) => {
+      const pts = pausePoints(it);
+      const who = el("span", "who", it.name, [
+        el("span", "what", it.topic),
+        pts.length ? el("span", "pz", "⏸ 自動暫停 " + pts.map(fmt).join("、")) : null,
+      ]);
+      const b = el("button", i === cur ? "cur" : "", null, [el("span", "n", String(i + 1)), who, el("span", "d", fmt(it.duration))]);
+      b.onclick = () => load(i, true);
+      ol.appendChild(el("li", null, null, [b]));
+    });
+  }
+
+  function renderChapters(it) {
+    const box = $("chap");
+    chapBtns.forEach((b) => b.remove());
+    marks.forEach((m) => m.remove());
+    chapBtns = it.chapters.map((c, i) => {
+      const end = i + 1 < it.chapters.length ? it.chapters[i + 1].start : it.duration;
+      const b = el("button", null, null, [el("span", i < 9 ? "ci" : "ci k10", String(i + 1)), el("span", "cl", (i < 9 ? " " : "") + c.label)]);
+      b.style.width = ((end - c.start) / it.duration * 100) + "%";
+      b.title = c.label + "（" + fmt(c.start) + "）";
+      b.onclick = () => seekTo(c.start);
+      box.insertBefore(b, $("head"));
+      return b;
+    });
+    fitChapters();
+    marks = points.map((t) => {
+      const m = el("div", "pmark");
+      m.style.left = (t / it.duration * 100) + "%";
+      m.title = "自動暫停 " + fmt(t);
+      box.appendChild(m);
+      return m;
+    });
+  }
+
+  // 段太短、段名放不下時只顯示編號（不要出現「1…」）
+  function fitChapters() {
+    chapBtns.forEach((b) => { b.classList.remove("tight"); if (b.scrollWidth > b.clientWidth + 1) b.classList.add("tight"); });
+  }
+  window.addEventListener("resize", fitChapters);
+
+  function syncPauseButton(it) {
+    const btn = $("pz");
+    btn.disabled = !canPause(it);
+    btn.setAttribute("aria-pressed", String(points.length > 0));
+    btn.textContent = !canPause(it) ? "自動暫停：這支沒有提問段" : "自動暫停：" + (points.length ? "開（" + points.map(fmt).join("、") + "）" : "關");
+  }
+
+  function load(i, autoplay) {
+    if (!list.length) return;
+    cur = Math.max(0, Math.min(list.length - 1, i));
+    const it = list[cur];
+    points = pausePoints(it);
+    $("no").textContent = String(cur + 1).padStart(2, "0");
+    $("nm").textContent = it.name;
+    $("tp").textContent = it.topic;
+    $("missing").classList.remove("on");
+    $("badge").classList.remove("on");
+    v.src = it.src;
+    v.load();
+    v.defaultPlaybackRate = rate;
+    v.playbackRate = rate;
+    lastT = 0;
+    startedAt = null;
+    renderChapters(it);
+    renderList();
+    syncPauseButton(it);
+    $("prevV").disabled = cur === 0;
+    $("nextV").disabled = cur === list.length - 1;
+    if (autoplay) v.play().catch(() => {});
+    update();
+  }
+
+  function chapterIndex(t) {
+    const ch = list[cur].chapters;
+    let k = 0;
+    for (let i = 0; i < ch.length; i++) if (t + 0.05 >= ch[i].start) k = i;
+    return k;
+  }
+  function seekTo(t) {
+    v.currentTime = Math.max(0, Math.min(t, list[cur].duration - 0.05));
+    lastT = v.currentTime;
+    $("badge").classList.remove("on");
+    update();
+  }
+  function stepChapter(d) {
+    const ch = list[cur].chapters, t = v.currentTime, k = chapterIndex(t);
+    if (d < 0 && t - ch[k].start > 1.5) return seekTo(ch[k].start);
+    seekTo(ch[Math.max(0, Math.min(ch.length - 1, k + d))].start);
+  }
+  function toggle() {
+    if (v.paused || v.ended) { if (v.ended) { seekTo(0); startedAt = null; } v.play().catch(() => {}); }
+    else v.pause();
+  }
+
+  let badgeTimer = 0;
+  function badge(msg, ms) {
+    const b = $("badge");
+    b.textContent = msg;
+    b.classList.add("on");
+    clearTimeout(badgeTimer);
+    if (ms) badgeTimer = setTimeout(() => b.classList.remove("on"), ms);
+  }
+
+  // 每一幀呼叫的地方只在內容改變時才寫入：Safari 若在按下與放開滑鼠之間換掉按鈕裡的文字節點，會丟掉這次 click（播放鈕偶爾沒反應）
+  function setText(node, s) { if (node.textContent !== s) node.textContent = s; }
+
+  function update() {
+    if (!list.length) return;
+    const it = list[cur], t = v.currentTime || 0;
+    const pct = Math.min(100, t / it.duration * 100);
+    $("fill").style.width = pct + "%";
+    $("head").style.left = pct + "%";
+    const k = chapterIndex(t);
+    chapBtns.forEach((b, i) => b.classList.toggle("cur", i === k));
+    const chn = "第 " + (k + 1) + " 段 · " + it.chapters[k].label;
+    if ($("chn").dataset.s !== chn) { $("chn").dataset.s = chn; $("chn").replaceChildren("第 ", el("b", null, String(k + 1)), " 段 · " + it.chapters[k].label); }
+    setText($("time"), fmt(t) + " / " + fmt(it.duration));
+    setText($("play"), v.paused ? "▶ 播放" : "❚❚ 暫停");
+    setText($("eta"), rate === 1 ? "" : "實際剩餘 " + fmt(realRemain()));
+    if (timerOn) drawTimer();
+  }
+
+  function drawTimer() {
+    const it = list[cur];
+    const elapsed = startedAt == null ? 0 : (performance.now() - startedAt) / 1000;
+    const rem = realRemain();
+    const e1 = $("tmEl");
+    setText(e1, fmt2(elapsed));
+    e1.classList.toggle("idle", startedAt == null);
+    setText($("tmRem"), fmt2(rem));
+    const slot = slotOf(it);
+    const sv = $("tmSlot"), sk = $("tmSlotK");
+    sv.classList.remove("warn", "over");
+    if (!slot) { setText(sk, "配時"); setText(sv, "--:--"); return; }
+    // 預估：已經過＋影片剩餘（不含影片播完後的講解）與配時比較
+    const left = slot - elapsed - rem;
+    setText(sk, "配時 " + fmt(slot) + (left >= 0 ? " · 尚餘" : " · 超時"));
+    setText(sv, fmt2(Math.abs(left)));
+    if (left < 0) sv.classList.add("over"); else if (left < 15) sv.classList.add("warn");
+  }
+
+  function setTimer(on) {
+    timerOn = on;
+    $("timer").classList.toggle("on", on);
+    $("tm").setAttribute("aria-pressed", String(on));
+    $("tm").textContent = "計時：" + (on ? "開" : "關");
+    if (on) drawTimer();
+  }
+
+  const RATES = [...document.querySelectorAll("#rate option")].map((o) => Number(o.value));
+  function setRate(r) {
+    const before = realRemain();
+    rate = r;
+    v.defaultPlaybackRate = r;
+    v.playbackRate = r;
+    $("rate").value = String(r);
+    const after = realRemain(), d = Math.round(after - before);
+    const diff = d === 0 ? "不變" : (d < 0 ? "少 " + -d + " 秒" : "多 " + d + " 秒");
+    badge(r + "× · 剩餘 " + fmt(before) + " → " + fmt(after) + "（" + diff + "）", 2600);
+    update();
+  }
+  function stepRate(d) {
+    const i = RATES.indexOf(rate);
+    const n = RATES[Math.max(0, Math.min(RATES.length - 1, (i < 0 ? RATES.indexOf(1) : i) + d))];
+    if (n !== rate) setRate(n);
+  }
+
+  function setVolume(n, show) {
+    vol = Math.max(0, Math.min(100, Math.round(n / 5) * 5));
+    if (vol > 0) muted = false;
+    applyVolume(show);
+  }
+  function toggleMute() {
+    if (muted || vol === 0) { muted = false; if (vol === 0) vol = 50; }
+    else muted = true;
+    applyVolume(true);
+  }
+  function applyVolume(show) {
+    v.volume = vol / 100;
+    v.muted = muted || vol === 0;
+    $("vol").value = String(muted ? 0 : vol);
+    $("volPct").textContent = muted ? "靜音" : vol + "%";
+    $("mute").textContent = v.muted ? "🔇" : vol < 50 && VOL_OK ? "🔉" : "🔊";
+    $("mute").setAttribute("aria-pressed", String(v.muted));
+    store.set("volume", String(vol));
+    store.set("muted", muted ? "1" : "0");
+    if (!show) return;
+    if (!VOL_OK) badge(muted ? "靜音（再按一次取消）" : "已取消靜音 · 音量請用機身側邊按鍵調整", 1600);
+    else badge(muted ? "靜音（再按" + (TOUCH ? "一次" : " M ") + "恢復 " + vol + "%）" : "音量 " + vol + "%", 1200);
+  }
+
+  // 每一幀檢查是否「播放中」跨過暫停點；拖曳、跳段越過不算
+  function tick() {
+    const t = v.currentTime;
+    if (!v.paused && !v.seeking) {
+      for (const p of points) {
+        if (lastT < p && t >= p && t - lastT < 0.5) {
+          v.pause();
+          v.currentTime = p;
+          badge("⏸ 已自動暫停 · " + (TOUCH ? "按「播放」繼續" : "按空白鍵繼續"), 0);
+          break;
+        }
+      }
+    }
+    lastT = v.currentTime;
+    update();
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+
+  v.addEventListener("play", () => { $("badge").classList.remove("on"); if (startedAt == null) startedAt = performance.now(); });
+  v.addEventListener("seeked", () => { lastT = v.currentTime; });
+  v.addEventListener("error", () => $("missing").classList.add("on"));
+  v.addEventListener("ended", () => { if (S.autoNext && cur < list.length - 1) load(cur + 1, true); });
+  v.addEventListener("click", toggle);
+  v.addEventListener("dblclick", fullscreen);
+
+  const fsElement = () => document.fullscreenElement || document.webkitFullscreenElement;
+  function exitFs() { (document.exitFullscreen || document.webkitExitFullscreen).call(document); }
+  function fullscreen() {
+    const st = $("stage");
+    if (fsElement()) return exitFs();
+    const req = st.requestFullscreen || st.webkitRequestFullscreen;
+    if (req) {
+      // 手機全螢幕時順便轉橫向（Android Chrome 支援；不支援的瀏覽器略過）
+      Promise.resolve(req.call(st)).then(() => { if (TOUCH && screen.orientation && screen.orientation.lock) return screen.orientation.lock("landscape"); }).catch(() => {});
+    } else if (v.webkitEnterFullscreen) v.webkitEnterFullscreen(); // iPhone：只有影片本身能全螢幕（系統播放介面，看不到計時）
+  }
+
+  $("play").onclick = toggle;
+  $("prevC").onclick = () => stepChapter(-1);
+  $("nextC").onclick = () => stepChapter(1);
+  $("prevV").onclick = () => load(cur - 1, false);
+  $("nextV").onclick = () => load(cur + 1, false);
+  $("fs").onclick = fullscreen;
+  $("tm").onclick = () => setTimer(!timerOn);
+  $("rate").onchange = (e) => setRate(Number(e.target.value));
+  $("vol").oninput = (e) => setVolume(Number(e.target.value), false);
+  $("mute").onclick = toggleMute;
+  $("pz").onclick = () => {
+    const it = list[cur];
+    override[it.slug] = !(points.length > 0);
+    points = pausePoints(it);
+    renderChapters(it);
+    renderList();
+    syncPauseButton(it);
+    update();
+    badge(points.length ? "這支會在 " + points.map(fmt).join("、") + " 自動暫停" : "已關閉自動暫停", 1800);
+  };
+
+  // ---- 功能導覽 ----
+  // 每一項：sel＝要框起來的元素（可多個，取聯集）、name（快速導覽用短名）、說明、kb（快速鍵；[X] 會畫成按鍵）
+  const TOUR = [
+    { sel: ["#stage"], name: "影片", title: "影片畫面", body: "點一下影片播放／暫停，點兩下切換全螢幕。", tb: "點一下影片播放／暫停；要放大畫面請按「全螢幕」。", kb: "[空白]播放／暫停" },
+    { sel: ["#chap"], name: "章節列", title: "章節列", body: "影片依內容分段，每段寬度＝時間長短。點段名直接跳過去；開了自動暫停時，暫停點會標成小三角形。", kb: "[1]–[9]跳到第幾段" },
+    { sel: ["#prevC", "#play", "#nextC"], name: "播放控制", title: "播放與換段", body: "中間是播放／暫停；左右兩顆跳到上一段、下一段。在段落中間按「上一段」會先回到這段開頭。", kb: "[←][→]上／下一段 · [Home]從頭" },
+    { sel: ["#prevV", "#nextV"], name: "換人", title: "上一支／下一支", body: "切換到上一位或下一位學員的影片。換過去不會自動播放，等主講人準備好再按播放。", kb: "[PgUp][PgDn]" },
+    { sel: [".speed"], name: "倍速", title: "倍速", body: "時間不夠時可以加快。改了倍速，旁邊會顯示換算後的「實際剩餘」時間。", kb: "[<][>]減速／加速" },
+    { sel: [".vol"], name: "音量", title: "音量", body: "拉桿調整影片音量，右邊顯示目前的百分比；喇叭圖示切換靜音。設定會記在這台電腦，換下一支影片也沿用。", tb: VOL_OK ? "拉桿調整影片音量；喇叭圖示切換靜音。設定會記在這台裝置，換下一支影片也沿用。" : "iPhone、iPad 請用機身側邊的音量鍵調整；這裡的喇叭圖示可以切換靜音。", kb: "[↑][↓]調整 · [M]靜音" },
+    { sel: ["#pz"], name: "自動暫停", title: "自動暫停", body: "影片有「提問」段時，打開後會在題目出現時自動停下，讓台下回答；按空白鍵繼續。只影響這次開啟。", tb: "影片有「提問」段時，打開後會在題目出現時自動停下，讓台下回答；按「播放」繼續。只影響這次開啟。", kb: "" },
+    { sel: ["#tm"], name: "計時", title: "主講人計時", body: "影片右上角顯示半透明計時：已經過的時間、影片剩餘、與配時相比還剩多少或超時多少。全螢幕也看得到。", kb: "[C]開關" },
+    { sel: ["#fs"], name: "全螢幕", title: "全螢幕", body: "只放大影片畫面（含計時），投影時使用。按 Esc 離開。", tb: "放大影片畫面，手機建議橫拿。iPhone 會改用系統的全螢幕播放（看不到計時），點左上角關閉離開。", kb: "[F]" },
+    { sel: ["aside"], name: "出場順序", title: "出場順序", body: "所有影片依出場順序排列，右邊是片長；點名字直接切換。有設定自動暫停的會另外標註。", kb: "" },
+    { sel: ["#themes"], name: "配色", title: "配色", body: "五種配色可以挑，配合場地燈光；選好會記在這台電腦。", tb: "五種配色可以挑；選好會記在這台裝置。", kb: "[T]輪替" },
+    { sel: [".keys"], name: "快速鍵", title: "快速鍵一覽", body: "所有快速鍵都列在這裡。想再看一次導覽，按右上角「快速導覽」或「逐步導覽」。", kb: "[?]快速導覽 · [G]逐步導覽" },
+  ];
+  // "[空白]播放" → <kbd>空白</kbd>播放（只用 textContent 組）
+  function kbNodes(spec, n) {
+    spec.split(/(\[[^\]]+\])/).filter(Boolean).forEach((p) => {
+      n.appendChild(p[0] === "[" ? el("kbd", null, p.slice(1, -1)) : document.createTextNode(p));
+    });
+    return n;
+  }
+  const bodyOf = (it) => (TOUCH && it.tb) || it.body;
+  let tourMode = null, tourStep = 0;
+  const tourBox = $("tour");
+  // 每個元素各自一個框（外擴 6px）；rectOf 取聯集，用來放說明卡與編號
+  function rectsOf(sels) {
+    return sels.map((s) => document.querySelector(s)).filter((n) => n && n.getClientRects().length).map((n) => {
+      const r = n.getBoundingClientRect();
+      return { left: r.left - 6, top: r.top - 6, width: r.width + 12, height: r.height + 12 };
+    });
+  }
+  function rectOf(sels) {
+    const rs = sels.map((s) => document.querySelector(s)).filter((n) => n && n.getClientRects().length).map((n) => n.getBoundingClientRect());
+    if (!rs.length) return null;
+    const l = Math.min(...rs.map((r) => r.left)), t = Math.min(...rs.map((r) => r.top));
+    const r = Math.max(...rs.map((x) => x.right)), b = Math.max(...rs.map((x) => x.bottom));
+    return { left: l - 6, top: t - 6, width: r - l + 12, height: b - t + 12 };
+  }
+  const tourItems = () => TOUR.filter((it) => rectOf(it.sel));
+  // rectsOf／rectOf 回傳視窗座標；導覽層蓋住整份文件，放到畫面上時加回捲動距離（sx、sy）
+  let sx = 0, sy = 0;
+  const place = (n, r) => Object.assign(n.style, { left: r.left + sx + "px", top: r.top + sy + "px", width: r.width + "px", height: r.height + "px" });
+  function drawTour() {
+    tourBox.replaceChildren();
+    if (!tourMode) return;
+    const items = tourItems();
+    const H0 = window.innerHeight;
+    // 逐步導覽：目標不在畫面裡（手機版要捲動）就先捲過去，上方留空間
+    if (tourMode === "step") {
+      const q = rectOf(items[Math.max(0, Math.min(items.length - 1, tourStep))].sel);
+      if (q && (q.top < 0 || q.top + Math.min(q.height, H0 * 0.6) > H0)) window.scrollBy(0, q.top - 70);
+    }
+    sx = window.scrollX; sy = window.scrollY;
+    tourBox.style.height = Math.max(document.documentElement.scrollHeight, sy + H0) + "px";
+    if (tourMode === "quick") {
+      tourBox.appendChild(el("div", "shade"));
+      items.forEach((it, i) => {
+        const r = rectsOf(it.sel)[0];
+        rectsOf(it.sel).forEach((rr) => { const ring = el("div", "ring"); place(ring, rr); tourBox.appendChild(ring); });
+        const pin = el("div", "pin", String(i + 1));
+        pin.style.left = r.left + sx + 4 + "px"; pin.style.top = r.top + sy + 4 + "px";
+        tourBox.appendChild(pin);
+      });
+      const ol = el("ol");
+      items.forEach((it, i) => ol.appendChild(el("li", null, null, [el("b", null, String(i + 1)), el("span", null, it.name, [TOUCH ? null : kbNodes(it.kb || "點一下使用", el("em"))])])));
+      const card = el("div", "card legend", null, [el("h3", null, "快速導覽"), ol, el("div", "hint", TOUCH ? "點任意處關閉 · 想看完整說明請按「逐步導覽」" + (sy > 40 || document.documentElement.scrollHeight > H0 + 40 ? " · 往下捲可以看到其他編號" : "") : "點任意處或按任意鍵關閉 · 想看完整說明請按「逐步導覽」（G）")]);
+      tourBox.appendChild(card);
+      const st = $("stage").getBoundingClientRect();
+      const cw = card.offsetWidth, chh = card.offsetHeight;
+      card.style.left = sx + Math.max(16, Math.min(window.innerWidth - cw - 16, st.left + (st.width - cw) / 2)) + "px";
+      card.style.top = sy + Math.max(16, st.top + (st.height - chh) / 2) + "px";
+      return;
+    }
+    tourStep = Math.max(0, Math.min(items.length - 1, tourStep));
+    const it = items[tourStep], r = rectOf(it.sel);
+    // 暗幕挖洞：整片矩形＋每個框一個圓角矩形，evenodd 填色讓框內透明
+    const W0 = document.documentElement.scrollWidth, rad = 10;
+    const holes = rectsOf(it.sel).map((q) => ({ left: q.left + sx, top: q.top + sy, width: q.width, height: q.height }));
+    const hole = (q) => { const x0 = q.left, y0 = q.top, x1 = q.left + q.width, y1 = q.top + q.height; return `M${x0 + rad} ${y0}H${x1 - rad}Q${x1} ${y0} ${x1} ${y0 + rad}V${y1 - rad}Q${x1} ${y1} ${x1 - rad} ${y1}H${x0 + rad}Q${x0} ${y1} ${x0} ${y1 - rad}V${y0 + rad}Q${x0} ${y0} ${x0 + rad} ${y0}Z`; };
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("class", "mask");
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", `M-10 -10H${W0 + 4000}V${parseFloat(tourBox.style.height) + 4000}H-10Z` + holes.map(hole).join(""));
+    svg.appendChild(path);
+    tourBox.appendChild(svg);
+    holes.forEach((q) => { const spot = el("div", "spot"); Object.assign(spot.style, { left: q.left + "px", top: q.top + "px", width: q.width + "px", height: q.height + "px" }); tourBox.appendChild(spot); });
+    const last = tourStep === items.length - 1;
+    const prev = el("button", "btn", "上一步"), next = el("button", "btn primary", last ? "完成" : "下一步"), end = el("button", "btn", "結束");
+    prev.disabled = tourStep === 0;
+    prev.onclick = () => stepTour(-1);
+    next.onclick = () => stepTour(1);
+    end.onclick = closeTour;
+    const card = el("div", "card", null, [
+      el("h3", null, it.title), el("p", null, bodyOf(it)),
+      it.kb && !TOUCH ? kbNodes(it.kb, el("div", "kb", "快速鍵：")) : null,
+      el("div", "nav", null, [el("span", "cnt", (tourStep + 1) + " / " + items.length), end, prev, next]),
+    ]);
+    tourBox.appendChild(card);
+    // 說明卡放在框的下方；放不下改上方；再放不下（如右側清單）就放左邊；影片這種大框放在框內下緣
+    const W = window.innerWidth, H = window.innerHeight, cw = card.offsetWidth, chh = card.offsetHeight, g = 14;
+    let x = r.left + r.width / 2 - cw / 2, y = r.top + r.height + g;
+    if (y + chh > H - 16) y = r.top - chh - g;
+    if (y < 16) { y = r.top + r.height / 2 - chh / 2; x = r.left - cw - g; if (x < 16) x = r.left + r.width + g; }
+    if (r.height > H * 0.45 && r.width > W * 0.45) { x = r.left + r.width / 2 - cw / 2; y = r.top + r.height - chh - 24; }
+    card.style.left = sx + Math.max(16, Math.min(W - cw - 16, x)) + "px";
+    card.style.top = sy + Math.max(16, Math.min(H - chh - 16, y)) + "px";
+    next.focus({ preventScroll: true });
+  }
+  function stepTour(d) {
+    if (d > 0 && tourStep >= tourItems().length - 1) return closeTour();
+    tourStep = Math.max(0, tourStep + d);
+    drawTour();
+  }
+  function openTour(mode) {
+    if (fsElement()) exitFs();
+    v.pause();
+    $("badge").classList.remove("on");
+    tourMode = mode; tourStep = 0;
+    tourBox.classList.add("on");
+    store.set("toured", "1");
+    drawTour();
+  }
+  function closeTour() { tourMode = null; tourBox.classList.remove("on"); tourBox.replaceChildren(); }
+  $("tourQuick").onclick = () => openTour("quick");
+  $("tourStep").onclick = () => openTour("step");
+  tourBox.addEventListener("click", () => { if (tourMode === "quick") closeTour(); });
+  window.addEventListener("resize", () => { if (tourMode) drawTour(); });
+  // 給導覽影片錄製腳本用：PLAYER_TOUR.open("step")、.go(3)
+  window.PLAYER_TOUR = { open: openTour, close: closeTour, go: (i) => { tourStep = i; drawTour(); } };
+
+  document.addEventListener("keydown", (e) => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const k = e.key;
+    if (tourMode) {
+      if (k === "Tab") return;
+      e.preventDefault();
+      if (tourMode === "quick" || k === "Escape") return closeTour();
+      if (k === "ArrowRight" || k === "Enter" || k === " ") stepTour(1);
+      else if (k === "ArrowLeft") stepTour(-1);
+      return;
+    }
+    if (k === "?") { e.preventDefault(); return openTour("quick"); }
+    if (k === "g" || k === "G") { e.preventDefault(); return openTour("step"); }
+    if (k === " " || k === "k" || k === "K") { e.preventDefault(); toggle(); }
+    else if (k === "ArrowRight") { e.preventDefault(); stepChapter(1); }
+    else if (k === "ArrowLeft") { e.preventDefault(); stepChapter(-1); }
+    else if (k === "PageDown" || k === "]") { e.preventDefault(); load(cur + 1, false); }
+    else if (k === "PageUp" || k === "[") { e.preventDefault(); load(cur - 1, false); }
+    else if (k === "f" || k === "F") { e.preventDefault(); fullscreen(); }
+    else if (k === "t" || k === "T") {
+      const i = THEMES.findIndex((x) => x.key === document.documentElement.dataset.theme);
+      badge("配色：" + setTheme(THEMES[(i + 1) % THEMES.length].key).name, 1200);
+    }
+    else if (k === "Home") { e.preventDefault(); seekTo(0); startedAt = v.paused ? null : performance.now(); if (timerOn) badge("從頭播放 · 計時歸零", 1400); }
+    else if (k === "c" || k === "C") { e.preventDefault(); setTimer(!timerOn); }
+    else if (k === "ArrowUp") { e.preventDefault(); setVolume((muted ? 0 : vol) + 10, true); }
+    else if (k === "ArrowDown") { e.preventDefault(); setVolume((muted ? 0 : vol) - 10, true); }
+    else if (k === "m" || k === "M") { e.preventDefault(); toggleMute(); }
+    else if (k === "<" || k === ",") { e.preventDefault(); stepRate(-1); }
+    else if (k === ">" || k === ".") { e.preventDefault(); stepRate(1); }
+    else if (/^[1-9]$/.test(k)) { const ch = list[cur].chapters[+k - 1]; if (ch) seekTo(ch.start); }
+  });
+
+  if (!list.length) { $("missing").classList.add("on"); return; }
+  if (!RATES.includes(rate)) { const o = el("option", null, rate + "×"); o.value = String(rate); $("rate").appendChild(o); RATES.push(rate); RATES.sort((a, b) => a - b); }
+  $("rate").value = String(rate);
+  setTimer(timerOn);
+  applyVolume(false);
+  load(0, false);
+  if (!store.get("toured")) badge(TOUCH ? "第一次使用？按右上角「快速導覽」，一張圖看完所有功能" : "第一次使用？按「快速導覽」或 ? 鍵，一張圖看完所有功能", 6000);
+})();
+</script>
+</body>
+</html>
