@@ -84,40 +84,32 @@ window.PLAYER_CHAPTERS = {
     "duration": 70,
     "chapters": [
       {
-        "label": "片頭",
+        "label": "開場",
         "start": 0
       },
       {
-        "label": "身分",
-        "start": 4
-      },
-      {
         "label": "卡關",
-        "start": 12.4
+        "start": 10
       },
       {
         "label": "做法",
-        "start": 22
+        "start": 19.6
       },
       {
         "label": "查核",
-        "start": 33.2
+        "start": 30.8
       },
       {
         "label": "成果",
-        "start": 41.2
+        "start": 38.8
       },
       {
         "label": "效益",
-        "start": 50
-      },
-      {
-        "label": "提問",
-        "start": 56
+        "start": 46.3
       },
       {
         "label": "收尾",
-        "start": 62
+        "start": 56
       }
     ],
     "src": "videos/p03.mp4"
