@@ -19,6 +19,10 @@
     --bg: #0c1526; --panel: #122038; --line: #22355a; --text: #eef3fa; --dim: #8fa3bd;
     --accent: #4fb3e6; --accent-ink: #0c1526; --chip: #172a48; --fill: rgba(79, 179, 230, 0.22);
   }
+  :root[data-theme="noir"] {
+    --bg: #0e0d10; --panel: #18171b; --line: #2e2b30; --text: #f3e9d2; --dim: #a89e8a;
+    --accent: #d4af37; --accent-ink: #0e0d10; --chip: #242227; --fill: rgba(212, 175, 55, 0.22);
+  }
   :root[data-theme="bamboo"] {
     --bg: #f3f1e7; --panel: #fbfaf4; --line: #d6d2bf; --text: #1d2a1f; --dim: #56655a;
     --accent: #1f7a4a; --accent-ink: #ffffff; --chip: #e9e6d6; --fill: rgba(31, 122, 74, 0.16);
@@ -26,6 +30,10 @@
   :root[data-theme="paper"] {
     --bg: #f6f6f4; --panel: #ffffff; --line: #dcdcd8; --text: #1c1c1e; --dim: #5f5f64;
     --accent: #b04a30; --accent-ink: #ffffff; --chip: #eeeeeb; --fill: rgba(176, 74, 48, 0.14);
+  }
+  :root[data-theme="seaside"] { /* 重點色比影片的 #1a7fbf 深，小字與按鈕才達 4.5:1 */
+    --bg: #eaf6fb; --panel: #fbfdfe; --line: #c4e1ee; --text: #0f3554; --dim: #466c86;
+    --accent: #146ca3; --accent-ink: #ffffff; --chip: #dcedf5; --fill: rgba(20, 108, 163, 0.16);
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; }
@@ -45,7 +53,7 @@
   .themes .nm { color: var(--text); font-size: 13px; min-width: 4.5em; }
   .sw { width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--line); padding: 0; position: relative; }
   .sw[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); }
-  .sw i { position: absolute; inset: 6px; border-radius: 50%; }
+  .sw i { position: absolute; inset: 8px; border-radius: 50%; } /* 中心點縮小，底色佔大部分，白色系才看得出來 */
 
   main { min-width: 0; display: flex; flex-direction: column; gap: 10px; min-height: 0; }
   .now { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
@@ -267,8 +275,10 @@
     { key: "theater", name: "劇場黑", bg: "#0b0b0c", ac: "#e8873a" },
     { key: "ember", name: "暖琥珀", bg: "#16120e", ac: "#e8873a" },
     { key: "harbor", name: "港灣藍", bg: "#0c1526", ac: "#4fb3e6" },
+    { key: "noir", name: "墨夜金", bg: "#0e0d10", ac: "#d4af37" },
     { key: "bamboo", name: "竹林晨光", bg: "#f3f1e7", ac: "#1f7a4a" },
     { key: "paper", name: "簡報白", bg: "#f6f6f4", ac: "#b04a30" },
+    { key: "seaside", name: "海邊晴天", bg: "#eaf6fb", ac: "#146ca3" },
   ];
   const $ = (id) => document.getElementById(id);
   const v = $("v");
@@ -612,7 +622,7 @@
     { sel: ["#tm"], name: "計時", title: "主講人計時", body: "影片右上角顯示半透明計時：已經過的時間、影片剩餘、與配時相比還剩多少或超時多少。全螢幕也看得到。", kb: "[C]開關" },
     { sel: ["#fs"], name: "全螢幕", title: "全螢幕", body: "只放大影片畫面（含計時），投影時使用。按 Esc 離開。", tb: "放大影片畫面，手機建議橫拿。iPhone 會改用系統的全螢幕播放（看不到計時），點左上角關閉離開。", kb: "[F]" },
     { sel: ["aside"], name: "出場順序", title: "出場順序", body: "所有影片依出場順序排列，右邊是片長；點名字直接切換。有設定自動暫停的會另外標註。", kb: "" },
-    { sel: ["#themes"], name: "配色", title: "配色", body: "五種配色可以挑，配合場地燈光；選好會記在這台電腦。", tb: "五種配色可以挑；選好會記在這台裝置。", kb: "[T]輪替" },
+    { sel: ["#themes"], name: "配色", title: "配色", body: "七種配色可以挑，配合場地燈光；選好會記在這台電腦。", tb: "七種配色可以挑；選好會記在這台裝置。", kb: "[T]輪替" },
     { sel: [".keys"], name: "快速鍵", title: "快速鍵一覽", body: "所有快速鍵都列在這裡。想再看一次導覽，按右上角「快速導覽」或「逐步導覽」。", kb: "[?]快速導覽 · [G]逐步導覽" },
   ];
   // "[空白]播放" → <kbd>空白</kbd>播放（只用 textContent 組）
